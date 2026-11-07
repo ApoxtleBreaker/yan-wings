@@ -1,0 +1,11 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        "yan_wings:lvjia_super_wings_bottle"
+                    ],
+    "result":  {
+                   "id":  "yan_wings:lvjia_super_wings",
+                   "count":  1
+               }
+}

@@ -1,0 +1,16 @@
+{
+    "replace":  false,
+    "values":  [
+                   "yan_wings:angel_wings",
+                   "yan_wings:parrot_wings",
+                   "yan_wings:slime_wings",
+                   "yan_wings:blue_butterfly_wings",
+                   "yan_wings:monarch_butterfly_wings",
+                   "yan_wings:fire_wings",
+                   "yan_wings:bat_wings",
+                   "yan_wings:fairy_wings",
+                   "yan_wings:evil_wings",
+                   "yan_wings:dragon_wings",
+                   "yan_wings:lvjia_super_wings"
+               ]
+}

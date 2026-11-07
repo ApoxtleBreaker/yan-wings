@@ -1,0 +1,182 @@
+package cc.yan.wings.client.flight;
+
+import cc.yan.wings.client.apparatus.WingForm;
+import cc.yan.wings.server.flight.Flight;
+import cc.yan.wings.server.flight.FlightAnimationEngine;
+import cc.yan.wings.server.flight.FlightAnimationState;
+import cc.yan.wings.util.function.FloatConsumer;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.player.Player;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+
+import java.util.Objects;
+import java.util.function.Consumer;
+
+@SuppressWarnings("null")
+public final class FlightViewDefault implements FlightView {
+    private static final WingState ABSENT_ANIMATOR = new WingState() {
+        @Override
+        public WingState nextAbsent() {
+            return this;
+        }
+
+        @Override
+        public WingState next(@NonNull WingForm<? extends @NonNull Animator> form) {
+            return PresentWingState.newState(form);
+        }
+
+        @Override
+        public void update(Flight flight, Player player) {
+        }
+
+        @Override
+        public void ifFormPresent(Consumer<FormRenderer> consumer) {
+        }
+    };
+
+    private final @NonNull Flight flight;
+
+    private final @NonNull Player player;
+
+    private @NonNull WingState animator = ABSENT_ANIMATOR;
+
+    private int lastUpdateTick = Integer.MIN_VALUE;
+
+    public FlightViewDefault(@NonNull Player player, @NonNull Flight flight) {
+        this.player = Objects.requireNonNull(player, "player");
+        this.flight = Objects.requireNonNull(flight, "flight");
+    }
+
+    @Override
+    public void ifFormPresent(Consumer<FormRenderer> consumer) {
+        this.animator.ifFormPresent(consumer);
+    }
+
+    @Override
+    public void tick() {
+        int currentTick = this.player.tickCount;
+        if (this.lastUpdateTick == currentTick) {
+            return;
+        }
+        this.lastUpdateTick = currentTick;
+        this.animator = WingForm.get(this.flight.getWing())
+                .map(view -> this.animator.next(view))
+                .orElseGet(this.animator::nextAbsent);
+        this.animator.update(this.flight, this.player);
+    }
+
+    @Override
+    public void tickEyeHeight(float value, FloatConsumer valueOut) {
+        if (this.flight.isFlying() || (this.flight.getFlyingAmount(1.0F) > 0.0F && this.player.getPose() == Pose.FALL_FLYING)) {
+            valueOut.accept(1.0F);
+        }
+    }
+
+    private interface Strategy {
+        void update(@NonNull Flight flight, @NonNull Player player);
+
+        void ifFormPresent(@NonNull Consumer<FormRenderer> consumer);
+    }
+
+    interface WingState {
+        @NonNull WingState nextAbsent();
+
+        WingState next(@NonNull WingForm<? extends @NonNull Animator> form);
+
+        void update(@NonNull Flight flight, @NonNull Player player);
+
+        void ifFormPresent(@NonNull Consumer<FormRenderer> consumer);
+    }
+
+    private record PresentWingState(@NonNull WingForm<? extends @NonNull Animator> wing,
+                                    Strategy behavior) implements WingState {
+
+        public static <T extends @NonNull Animator> WingState newState(@NonNull WingForm<T> shape) {
+            return new PresentWingState(shape, new WingStrategy<>(shape));
+        }
+
+        @Override
+        public WingState nextAbsent() {
+            return ABSENT_ANIMATOR;
+        }
+
+        @Override
+        public WingState next(@NonNull WingForm<? extends @NonNull Animator> form) {
+            if (this.wing.equals(form)) {
+                return this;
+            }
+            return PresentWingState.newState(form);
+        }
+
+        @Override
+        public void update(Flight flight, Player player) {
+            this.behavior.update(flight, player);
+        }
+
+        @Override
+        public void ifFormPresent(Consumer<FormRenderer> consumer) {
+            this.behavior.ifFormPresent(consumer);
+        }
+
+        private static class WingStrategy<T extends @NonNull Animator> implements Strategy {
+            private final @NonNull WingForm<T> shape;
+
+            private final @NonNull T animator;
+
+            private final @NonNull FormRenderer renderer;
+
+            private final @NonNull FlightAnimationEngine animationEngine = new FlightAnimationEngine();
+
+            private @Nullable FlightAnimationState displayedAnimationState;
+
+            public WingStrategy(@NonNull WingForm<T> shape) {
+                this.shape = Objects.requireNonNull(shape, "shape");
+                this.animator = Objects.requireNonNull(shape.createAnimator(), "animator");
+                FlightAnimationVisuals.begin(FlightAnimationState.IDLE, this.animator);
+                this.renderer = new FormRenderer() {
+                    @Override
+                    public @NonNull RenderType getRenderType() {
+                        return WingStrategy.this.shape.getRenderType();
+                    }
+
+                    @Override
+                    public void render(@NonNull PoseStack matrixStack, @NonNull VertexConsumer buffer, int packedLight,
+                                       int packedOverlay, float red, float green, float blue, float alpha, float delta) {
+                        WingStrategy.this.shape.getModel().render(WingStrategy.this.animator, delta, matrixStack, buffer, packedLight, packedOverlay, red, green, blue, alpha);
+                    }
+                };
+            }
+
+            @Override
+            public void update(@NonNull Flight flight, @NonNull Player player) {
+                this.animator.update();
+                if (!player.isLocalPlayer()) {
+                    this.applyRemoteAnimationState(flight.getAnimationState());
+                    return;
+                }
+                if (this.animationEngine.tick(flight, player)) {
+                    FlightAnimationVisuals.begin(this.animationEngine.getState(), this.animator);
+                }
+            }
+
+            private void applyRemoteAnimationState(@NonNull FlightAnimationState animationState) {
+                FlightAnimationState safeAnimationState = Objects.requireNonNull(animationState, "animation state");
+                if (this.displayedAnimationState == safeAnimationState) {
+                    return;
+                }
+                this.displayedAnimationState = safeAnimationState;
+                this.animationEngine.load(safeAnimationState);
+                FlightAnimationVisuals.begin(safeAnimationState, this.animator);
+            }
+
+            @Override
+            public void ifFormPresent(Consumer<FormRenderer> consumer) {
+                consumer.accept(this.renderer);
+            }
+        }
+    }
+}

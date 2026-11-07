@@ -1,0 +1,11 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        "yan_wings:bat_wings"
+                    ],
+    "result":  {
+                   "id":  "yan_wings:bat_wings_bottle",
+                   "count":  1
+               }
+}
